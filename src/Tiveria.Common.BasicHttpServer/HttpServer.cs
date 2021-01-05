@@ -13,7 +13,8 @@ namespace Tiveria.Common.BasicHttpServer
     public class HttpServer
     {
         private readonly HttpListener _listener = new HttpListener();
-        private CancellationTokenSource _tokenSource;
+        private CancellationTokenSource _tokenSource = new CancellationTokenSource();
+        private CancellationToken _token;
 
         public string ListenerPrefix { get; }
         public byte MaxHttpConnectionCount { get; }
@@ -47,11 +48,11 @@ namespace Tiveria.Common.BasicHttpServer
         /// <param name="useHttps">True to add 'https://' prefix insteaad of 'http://'.</param>
         /// <param name="maxHttpConnectionCount">Maximum HTTP connection count, after which the incoming requests will wait (sockets are not included).</param>
         /// <returns>Server listening task.</returns>
-        public async Task StartAsync(Func<HttpListenerRequest, HttpListenerResponse, Task> onHttpRequestAsync)
+        public async Task StartAsync(Func<HttpListenerRequest, HttpListenerResponse, Task> onHttpRequestAsync, CancellationToken ct)
         {
             Ensure.That(IsStarted).IsFalse().WithExtraMessageOf(() => "Server already started");
 
-            _tokenSource = new CancellationTokenSource();
+            _token = ct;
             Ensure.That(onHttpRequestAsync).IsNotNull();
 
             try 
@@ -101,6 +102,12 @@ namespace Tiveria.Common.BasicHttpServer
                 _listener.Stop();
             }
         }
+
+        public async Task StartAsync(Func<HttpListenerRequest, HttpListenerResponse, Task> onHttpRequestAsync)
+        {
+            await StartAsync(onHttpRequestAsync, _tokenSource.Token);
+        }
+
 
         public void Stop()
         {
