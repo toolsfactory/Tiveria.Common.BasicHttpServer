@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.Extensions.Logging;
+using System;
 using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -12,32 +13,45 @@ namespace Tiveria.Common.BasicHttpServer
 {
     public class HttpServer
     {
-        private readonly HttpListener _listener = new HttpListener();
-        private CancellationTokenSource _tokenSource = new CancellationTokenSource();
-        private CancellationToken _token;
-
+        #region public properties
         public string ListenerPrefix { get; }
         public byte MaxHttpConnectionCount { get; }
         public bool IsStarted { get; private set; }
+        public bool HttpsEnabled { get; private set; }
+        #endregion
 
-        public HttpServer(int port, bool useHttps = false, byte maxHttpConnectionCount = 32)
+        #region private fields
+        private readonly HttpListener _listener = new HttpListener();
+        private readonly ILogger<HttpServer> _logger;
+        private CancellationTokenSource _tokenSource = new CancellationTokenSource();
+        #endregion
+
+        #region constructor
+        public HttpServer(ILogger<HttpServer> logger, int port, bool useHttps = false, byte maxHttpConnectionCount = 32)
         {
             Ensure.That(port).IsInRange(0, UInt16.MaxValue);
             Ensure.That(MaxHttpConnectionCount).IsInRange(0, 32);
 
             var s = useHttps ? "s" : String.Empty;
             ListenerPrefix = $"http{s}://+:{port}/";
-            
-            try 
-            { 
-                _listener.Prefixes.Add(ListenerPrefix); 
-            }
-            catch (Exception ex) 
-            { 
-                throw new ArgumentException("Invalid Prefix. Format must be 'http(s)://+:(port)/'", ex); 
-            }
+            _logger = logger;
             MaxHttpConnectionCount = maxHttpConnectionCount;
+
+            TryAddPrefix();
         }
+
+        private void TryAddPrefix()
+        {
+            try
+            {
+                _listener.Prefixes.Add(ListenerPrefix);
+            }
+            catch (Exception ex)
+            {
+                throw new ArgumentException("Invalid Prefix. Format must be 'http(s)://+:(port)/'", ex);
+            }
+        }
+        #endregion
 
         /// <summary>
         /// Creates and starts a new instance of the http(s) server.
@@ -51,55 +65,59 @@ namespace Tiveria.Common.BasicHttpServer
         public async Task StartAsync(Func<HttpListenerRequest, HttpListenerResponse, Task> onHttpRequestAsync, CancellationToken ct)
         {
             Ensure.That(IsStarted).IsFalse().WithExtraMessageOf(() => "Server already started");
-
-            _token = ct;
             Ensure.That(onHttpRequestAsync).IsNotNull();
 
-            try 
-            { 
-                _listener.Start(); 
-            }
-            catch (Exception ex) when ((ex as HttpListenerException)?.ErrorCode == 5)
-            {
-                var msg = getNamespaceReservationExceptionMessage(ListenerPrefix);
-                throw new UnauthorizedAccessException(msg, ex);
-            }
+            var linkedCTS = CancellationTokenSource.CreateLinkedTokenSource(ct, _tokenSource.Token);
+            TryStartListener();
 
             using (var s = new SemaphoreSlim(MaxHttpConnectionCount))
-            using (var r = _tokenSource.Token.Register(() => _listener.Close()))
             {
-                bool cancel = false;
-                while (!cancel)
+                while (!linkedCTS.IsCancellationRequested)
                 {
                     try
                     {
+                        _logger.LogDebug("Waiting for requests");
                         var ctx = await _listener.GetContextAsync();
+                        _logger.LogDebug("Request received: {context}", ctx);
 
                         if (ctx.Request.IsWebSocketRequest)
                         {
+                            _logger.LogDebug("WebSocket request. Closing.");
                             ctx.Response.StatusCode = (int)HttpStatusCode.BadRequest;
                             ctx.Response.Close();
                         }
                         else
                         {
+                            _logger.LogDebug("Waiting for Requesthandler");
                             await s.WaitAsync();
+                            _logger.LogDebug("Calling Requesthandler");
                             Task.Factory.StartNew(() => onHttpRequestAsync(ctx.Request, ctx.Response), TaskCreationOptions.None)
                                         .ContinueWith(t => s.Release())
                                         .Wait(0);
                         }
                     }
-                    catch (Exception)
+                    catch (OperationCanceledException)
                     {
-                        if (!_tokenSource.Token.IsCancellationRequested)
-                            throw;
+                        _listener.Close();
                     }
-                    finally
-                    {
-                        if (_tokenSource.Token.IsCancellationRequested)
-                            cancel = true;
-                    }
+                    _logger.LogDebug("RequestLoop finished");
                 }
                 _listener.Stop();
+            }
+        }
+
+        private void TryStartListener()
+        {
+            try
+            {
+                _logger.LogInformation("Starting listener");
+                _listener.Start();
+            }
+            catch (Exception ex) when ((ex as HttpListenerException)?.ErrorCode == 5)
+            {
+                var msg = getNamespaceReservationExceptionMessage(ListenerPrefix);
+                _logger.LogError(ex, msg);
+                throw new UnauthorizedAccessException(msg, ex);
             }
         }
 
@@ -107,7 +125,6 @@ namespace Tiveria.Common.BasicHttpServer
         {
             await StartAsync(onHttpRequestAsync, _tokenSource.Token);
         }
-
 
         public void Stop()
         {
@@ -130,7 +147,7 @@ namespace Tiveria.Common.BasicHttpServer
             else
             {
                 return $"HTTP server can not start. Namespace reservation does not exist.{Environment.NewLine}" +
-                        $"On Windows run: 'netsh http add urlacl url={httpListenerPrefix} user=\"Everyone\"'.";
+                        $"On Windows run: 'netsh http add urlacl url={httpListenerPrefix} user=\"Everyone\"'. (Or 'Jeder' in german...')";
             }
         }
     }
