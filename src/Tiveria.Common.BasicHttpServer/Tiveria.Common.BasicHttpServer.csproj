@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net5.0;netcoreapp3.1;netstandard2.0</TargetFrameworks>
+    <TargetFrameworks>net6.0</TargetFrameworks>
     <Version>1.0.0</Version>
     <Authors>Michael Geissler</Authors>
     <Company>Tiveria Embedded Solutions GmbH</Company>
@@ -10,7 +10,7 @@
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <RepositoryUrl>https://github.com/toolsfactory/Tiveria.Common.Extensions</RepositoryUrl>
-    <PackageReleaseNotes>Sencond drop with additional extensions for Assembly, Byte, Collection, DataReader, Dictionary, ...</PackageReleaseNotes>
+    <PackageReleaseNotes>Second drop with additional extensions for Assembly, Byte, Collection, DataReader, Dictionary, ...</PackageReleaseNotes>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <Copyright>Copyright © 2020 Michael Geissler</Copyright>
     <PackageTags>Extensions Extensions ExtensionMethod ExtensionMethods</PackageTags>
@@ -31,11 +31,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="5.0.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\..\Tiveria.Common\src\Tiveria.Common\Tiveria.Common.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="6.0.1" />
+    <PackageReference Include="Tiveria.Common" Version="1.3.3" />
   </ItemGroup>
 
   <ItemGroup>
